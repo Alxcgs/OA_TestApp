@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parking Admin | Full DB Access</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --primary: #38bdf8;
+            --accent: #818cf8;
+            --text: #f1f5f9;
+            --text-dim: #94a3b8;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        h1 { margin: 0; font-weight: 600; font-size: 1.8rem; background: linear-gradient(to right, var(--primary), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+        .nav { display: flex; gap: 15px; margin-bottom: 30px; background: rgba(255,255,255,0.02); padding: 10px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); }
+        .nav-btn { background: none; border: none; color: var(--text-dim); padding: 10px 20px; border-radius: 10px; cursor: pointer; font-weight: 500; transition: 0.3s; }
+        .nav-btn.active { background: var(--primary); color: var(--bg); }
+
+        .lot-selector { margin-bottom: 20px; display: flex; align-items: center; gap: 10px; color: var(--text-dim); }
+        select { background: var(--card-bg); border: 1px solid rgba(255,255,255,0.1); color: var(--text); padding: 8px 12px; border-radius: 8px; outline: none; }
+
+        .view { display: none; animation: fadeIn 0.4s ease forwards; }
+        .view.active { display: block; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Таблиці */
+        .table-container { background: var(--card-bg); border-radius: 20px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05); }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { padding: 16px 20px; background: rgba(0,0,0,0.2); color: var(--text-dim); font-weight: 500; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        td { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 0.9rem; }
+        tr:hover { background: rgba(255,255,255,0.01); }
+
+        /* Місця (Візуальна сітка) */
+        .spaces-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 10px; margin-top: 20px; }
+        .space-box { aspect-ratio: 1; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: var(--success); font-weight: 600; cursor: default; }
+        .space-box.occupied { background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: var(--danger); }
+
+        /* Бейджі */
+        .badge { padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+        .badge-success { background: rgba(34, 197, 94, 0.1); color: var(--success); }
+        .badge-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
+        .badge-info { background: rgba(56, 189, 248, 0.1); color: var(--primary); }
+
+        .refresh-tag { font-size: 0.75rem; color: var(--text-dim); margin-top: 15px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Parking Management System — Database Explorer</h1>
+            <div id="clock" style="color: var(--text-dim); font-size: 0.9rem;"></div>
+        </div>
+
+        <div class="nav">
+            <button class="nav-btn active" onclick="switchView('lots')">Майданчики</button>
+            <button class="nav-btn" onclick="switchView('db')">База Квитків (Table)</button>
+            <button class="nav-btn" onclick="switchView('visual')">Карта Місць (Visual)</button>
+        </div>
+
+        <div id="lot-select-container" class="lot-selector" style="display:none">
+            Виберіть парковку: 
+            <select id="lot-dropdown" onchange="refreshCurrentView()"></select>
+        </div>
+
+        <!-- VIEW: LOTS -->
+        <div id="view-lots" class="view active">
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Назва</th>
+                            <th>Тариф (₴/год)</th>
+                            <th>Місць всього</th>
+                            <th>Вільних</th>
+                            <th>Адреса</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lots-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- VIEW: DATABASE (ALL TICKETS) -->
+        <div id="view-db" class="view">
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Номер</th>
+                            <th>Тип</th>
+                            <th>В'їзд (UTC)</th>
+                            <th>Виїзд (UTC)</th>
+                            <th>Сума</th>
+                            <th>Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tickets-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- VIEW: VISUAL MAP -->
+        <div id="view-visual" class="view">
+            <div id="spaces-container" class="spaces-grid"></div>
+        </div>
+
+        <div class="refresh-tag">Система синхронізується кожні 3 секунди</div>
+    </div>
+
+    <script>
+        let currentView = 'lots';
+        let lots = [];
+
+        async function init() {
+            const res = await fetch('/api/lots');
+            lots = await res.json();
+            const dropdown = document.getElementById('lot-dropdown');
+            dropdown.innerHTML = lots.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+            
+            updateClock();
+            setInterval(updateClock, 1000);
+            setInterval(refreshCurrentView, 3000);
+            refreshCurrentView();
+        }
+
+        function updateClock() {
+            document.getElementById('clock').innerText = new Date().toLocaleTimeString();
+        }
+
+        async function refreshCurrentView() {
+            if (currentView === 'lots') {
+                const res = await fetch('/api/lots');
+                const data = await res.json();
+                renderLotsTable(data);
+            } else if (currentView === 'db') {
+                const lotId = document.getElementById('lot-dropdown').value;
+                const res = await fetch(`/api/lots/${lotId}/history`);
+                const data = await res.json();
+                renderTicketsTable(data);
+            } else if (currentView === 'visual') {
+                const lotId = document.getElementById('lot-dropdown').value;
+                // We use the detail endpoint to see if spaces are occupied
+                // Note: The API doesn't return full space grid in LotDetails, 
+                // but we can infer them or fetch details if the API supports it.
+                // Since our current API is simple, we will display placeholders for occupied vs free
+                const res = await fetch(`/api/lots/${lotId}`);
+                const data = await res.json();
+                renderVisualSpaces(data);
+            }
+        }
+
+        function renderLotsTable(data) {
+            const body = document.getElementById('lots-table-body');
+            body.innerHTML = data.map(l => `
+                <tr>
+                    <td>${l.id}</td>
+                    <td style="font-weight:600">${l.name}</td>
+                    <td style="color:var(--primary)">${l.hourlyRate}</td>
+                    <td>${l.totalSpaces}</td>
+                    <td style="color:var(--success)">${l.availableSpaces}</td>
+                    <td style="color:var(--text-dim); font-size:0.75rem">${l.address}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderTicketsTable(data) {
+            const body = document.getElementById('tickets-table-body');
+            body.innerHTML = data.map(t => `
+                <tr>
+                    <td>${t.id}</td>
+                    <td style="font-weight:600">${t.licensePlate}</td>
+                    <td><span class="badge badge-info">${t.vehicleType}</span></td>
+                    <td>${formatTime(t.entryTime)}</td>
+                    <td>${t.exitTime ? formatTime(t.exitTime) : '—'}</td>
+                    <td>${t.amountCharged ? t.amountCharged + ' ₴' : '—'}</td>
+                    <td><span class="badge ${t.isPaid ? 'badge-success' : 'badge-warning'}">${t.isPaid ? 'Оплачено' : 'Очікує'}</span></td>
+                </tr>
+            `).join('');
+        }
+
+        function renderVisualSpaces(lot) {
+            const container = document.getElementById('spaces-container');
+            const total = lot.totalSpaces;
+            const occupied = lot.occupiedSpaces;
+            
+            let html = '';
+            for (let i = 1; i <= total; i++) {
+                const isOccupied = i <= occupied; // Simulation since we don't fetch full space objects
+                html += `<div class="space-box ${isOccupied ? 'occupied' : ''}" title="Місце #${i}">#${i}</div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        function switchView(view) {
+            currentView = view;
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById(`view-${view}`).classList.add('active');
+            
+            document.querySelectorAll('.nav-btn').forEach(b => {
+                b.classList.toggle('active', b.onclick.toString().includes(view));
+            });
+
+            document.getElementById('lot-select-container').style.display = (view === 'db' || view === 'visual') ? 'flex' : 'none';
+            refreshCurrentView();
+        }
+
+        function formatTime(iso) {
+            if (!iso) return '—';
+            return iso.split('T')[1].split('.')[0];
+        }
+
+        init();
+    </script>
+</body>
+</html>
